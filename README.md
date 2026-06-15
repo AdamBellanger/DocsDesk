@@ -48,17 +48,14 @@ pyinstaller build_exe.spec
 
 ## Configuration
 
-Au premier lancement, un formulaire de connexion demande **l'e-mail**, le
-**mot de passe** et **l'Interface ID** Bob! Desk. Les identifiants sont stockés
-localement (hors dépôt Git) dans :
+Au premier lancement, un formulaire de connexion demande simplement **l'e-mail**
+et le **mot de passe** Bob! Desk. L'interface est résolue automatiquement après
+la connexion (via `/auth/me`). Les identifiants sont stockés localement (hors
+dépôt Git) dans :
 
 ```
 %APPDATA%\DocsDesk\.env
 ```
-
-> L'**Interface ID** identifie l'espace Bob! Desk (visible dans l'URL de
-> app.bob-desk.com). Il n'est pas versionné : il se saisit une fois dans le
-> formulaire sur chaque poste.
 
 Les PDF convertis transitent par `%APPDATA%\DocsDesk\tmp\` puis sont supprimés
 après l'upload. LibreOffice utilise un profil dédié dans
@@ -83,8 +80,8 @@ cd ..
 python gui_app.py
 ```
 
-Au premier démarrage, saisissez e-mail + mot de passe + Interface ID dans le
-formulaire. Assurez-vous que **LibreOffice** est installé sur ce poste.
+Au premier démarrage, saisissez e-mail + mot de passe dans le formulaire.
+Assurez-vous que **LibreOffice** est installé sur ce poste.
 
 ## Formats acceptés
 

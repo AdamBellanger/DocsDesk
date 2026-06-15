@@ -276,22 +276,18 @@ function SettingsModal({ onClose, dryRun, setDryRun, appdataDir, dark, setDark }
 function LoginModal({ onClose, onSaved }) {
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
-  const [interfaceId, setInterfaceId] = useState('')
   const [error, setError]       = useState('')
   const [loading, setLoading]   = useState(false)
 
   useEffect(() => {
-    api('/credentials').then(d => {
-      setEmail(d.email || ''); setPassword(d.password || ''); setInterfaceId(d.interface_id || '')
-    })
+    api('/credentials').then(d => { setEmail(d.email || ''); setPassword(d.password || '') })
   }, [])
 
   const save = async () => {
     if (!email || !password) { setError('E-mail et mot de passe sont obligatoires.'); return }
     if (!email.includes('@')) { setError('Adresse e-mail invalide.'); return }
-    if (!interfaceId.trim()) { setError("L'Interface ID est obligatoire."); return }
     setLoading(true); setError('')
-    const res = await api('/save_credentials', { email, password, interface_id: interfaceId.trim() })
+    const res = await api('/save_credentials', { email, password })
     setLoading(false)
     if (res.ok) { onSaved(email); onClose() }
     else setError(res.error || 'Connexion échouée.')
@@ -311,7 +307,6 @@ function LoginModal({ onClose, onSaved }) {
           {[
             ['E-mail', email, setEmail, 'email', false, 'vous@exemple.fr'],
             ['Mot de passe', password, setPassword, 'password', true, '••••••••'],
-            ['Interface ID', interfaceId, setInterfaceId, 'text', false, 'ex. 68f23ee2810dca3d4be0315e'],
           ].map(([lbl, val, set, type, secret, ph]) => (
             <div key={lbl}>
               <label className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--text3)' }}>{lbl}</label>
@@ -322,9 +317,6 @@ function LoginModal({ onClose, onSaved }) {
                 style={{ background: 'var(--card)', borderColor: 'var(--border)', color: 'var(--text)' }} />
             </div>
           ))}
-          <p className="text-[10px] leading-relaxed" style={{ color: 'var(--text3)' }}>
-            L'Interface ID identifie votre espace Bob! Desk. Visible dans l'URL de l'app Bob! Desk, ou demandez-le à votre administrateur.
-          </p>
           {error && <p className="text-xs text-red-500">{error}</p>}
           <button onClick={save} disabled={loading}
             className="w-full py-2.5 rounded-xl text-sm font-semibold text-white transition-colors cursor-pointer disabled:opacity-50"

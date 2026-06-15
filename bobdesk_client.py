@@ -26,7 +26,7 @@ class BobDeskClient:
         base_url: str,
         email: str,
         password: str,
-        interface_id: str,
+        interface_id: str = "",
         timeout: int = 30,
         dry_run: bool = False,
     ):
@@ -51,11 +51,11 @@ class BobDeskClient:
 
     def _login(self):
         url = f"{self.base_url}/auth/login"
-        payload = {
-            "email": self.email,
-            "password": self.password,
-            "interface_id": self.interface_id,
-        }
+        # L'email + mot de passe suffisent à Bob! Desk. L'interface_id est
+        # facultatif : s'il n'est pas fourni, on le résout après login via /auth/me.
+        payload = {"email": self.email, "password": self.password}
+        if self.interface_id:
+            payload["interface_id"] = self.interface_id
         logger.info("Connexion Bob! Desk (%s)...", self.email)
         try:
             resp = self.session.post(url, json=payload, timeout=self.timeout)
@@ -64,7 +64,7 @@ class BobDeskClient:
 
         if resp.status_code == 401:
             raise BobDeskAPIError(
-                "Login échoué (401) — vérifier BOBDESK_EMAIL / BOBDESK_PASSWORD",
+                "Login échoué (401) — vérifier l'e-mail et le mot de passe",
                 401, resp.text[:300],
             )
         if resp.status_code >= 400:
@@ -73,10 +73,34 @@ class BobDeskClient:
             )
 
         # cookie auth-production stocké automatiquement dans self.session
-        self.session.headers.update({
-            "x-auth": "ok",
-            "client": self.interface_id,
-        })
+        self.session.headers["x-auth"] = "ok"
+
+        # Résolution automatique de l'interface si non fournie
+        if not self.interface_id:
+            self.interface_id = self._fetch_interface_id()
+            if not self.interface_id:
+                raise BobDeskAPIError(
+                    "Aucune interface Bob! Desk associée à ce compte."
+                )
+            logger.info("Interface résolue automatiquement : %s", self.interface_id)
+
+        self.session.headers["client"] = self.interface_id
+
+    def _fetch_interface_id(self) -> str:
+        """Récupère l'identifiant d'interface de l'utilisateur via /auth/me.
+        Choisit l'interface accessible (préférence : type 'contractor')."""
+        try:
+            resp = self.session.get(f"{self.base_url}/auth/me", timeout=self.timeout)
+            if resp.status_code >= 400:
+                return ""
+            clients = (resp.json() or {}).get("user", {}).get("_clients", []) or []
+        except Exception as exc:
+            logger.warning("Résolution interface échouée : %s", exc)
+            return ""
+        accessible = [c for c in clients if c.get("hasAccess")] or clients
+        contractors = [c for c in accessible if c.get("type") == "contractor"]
+        chosen = (contractors or accessible)
+        return chosen[0].get("_id", "") if chosen else ""
         logger.info("Connecté.")
 
     # ------------------------------------------------------------------

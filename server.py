@@ -114,14 +114,16 @@ def api_save_credentials():
     data = request.json
     email = data.get("email", "").strip()
     password = data.get("password", "").strip()
-    # L'interface_id peut être saisi dans le formulaire ; à défaut on garde l'existant.
-    iface = data.get("interface_id", "").strip() or os.getenv("BOBDESK_INTERFACE_ID", "")
+    # L'interface_id est facultatif : résolu automatiquement après login.
+    iface = data.get("interface_id", "").strip()
 
     try:
-        BobDeskClient(
+        bob = BobDeskClient(
             base_url=os.getenv("BOBDESK_BASE_URL", "https://prod-api.bob-desk.com/api"),
             email=email, password=password, interface_id=iface, timeout=10,
         )
+        # interface_id réellement utilisé (résolu via /auth/me si non fourni)
+        iface = bob.interface_id
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)})
 
