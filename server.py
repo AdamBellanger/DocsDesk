@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import uuid
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -31,6 +32,8 @@ ENV_PATH = _APPDATA / ".env"
 
 TMP_DIR = _APPDATA / "tmp"
 TMP_DIR.mkdir(parents=True, exist_ok=True)
+INCOMING_DIR = TMP_DIR / "incoming"   # fichiers reçus du frontend, avant conversion
+INCOMING_DIR.mkdir(parents=True, exist_ok=True)
 
 # Copie le template .env.example au premier lancement
 _template = _BASE / "config" / ".env.example"
@@ -221,19 +224,27 @@ def api_upload():
         except queue.Empty:
             break
 
-    data = request.json or {}
-    client_id = data.get("client_id", "").strip()
-    tab_id = data.get("tab_id", "").strip()
-    files = data.get("files", [])
-    dry_run = data.get("dry_run", False)
+    # Le frontend envoie les fichiers en multipart (contenu, pas chemin disque).
+    client_id = request.form.get("client_id", "").strip()
+    tab_id = request.form.get("tab_id", "").strip()
+    dry_run = request.form.get("dry_run", "false").lower() == "true"
+    uploaded = request.files.getlist("files")
 
     if not client_id:
         return jsonify({"ok": False, "error": "Aucun client sélectionné."}), 400
-    if not files:
+    if not uploaded:
         return jsonify({"ok": False, "error": "Aucun fichier à traiter."}), 400
 
+    # Enregistre chaque fichier reçu dans un dossier temp avec un nom unique.
+    staged = []
+    for fs in uploaded:
+        orig_name = Path(fs.filename or "fichier").name
+        dest = INCOMING_DIR / f"{uuid.uuid4().hex}_{orig_name}"
+        fs.save(str(dest))
+        staged.append({"path": str(dest), "name": orig_name})
+
     threading.Thread(
-        target=_worker, args=(client_id, tab_id, files, dry_run), daemon=True,
+        target=_worker, args=(client_id, tab_id, staged, dry_run), daemon=True,
     ).start()
     return jsonify({"ok": True})
 
@@ -311,10 +322,15 @@ def _worker(client_id, tab_id, files, dry_run):
             except Exception as exc:
                 logger.error("✗ [%d/%d] Erreur %s : %s", idx, total, name, exc)
             finally:
-                # Nettoyage du PDF temporaire
-                if pdf_path:
+                # Nettoyage : PDF converti + fichier source reçu (dossier incoming).
+                # On ne supprime que ce qui se trouve sous notre dossier temp.
+                for tmp in {pdf_path, src_path}:
+                    if not tmp:
+                        continue
                     try:
-                        Path(pdf_path).unlink(missing_ok=True)
+                        p = Path(tmp)
+                        if p.is_file() and TMP_DIR in p.parents:
+                            p.unlink(missing_ok=True)
                     except Exception:
                         pass
 

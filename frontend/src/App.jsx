@@ -98,24 +98,21 @@ function FileRow({ f, onRemove }) {
 }
 
 // ── DropZone ──────────────────────────────────────────────────────────────
+// On transmet directement les objets File (leur CONTENU est accessible en JS),
+// sans dépendre du chemin disque — ce qui rend le glisser-déposer fiable dans
+// la webview comme dans un navigateur.
 function DropZone({ disabled, onFiles }) {
   const [drag, setDrag] = useState(false)
 
-  const handleBrowse = async () => {
+  const handleBrowse = () => {
     if (disabled) return
-    try {
-      const paths = await window.pywebview.api.browse_files()
-      if (paths?.length) onFiles(paths.map(p => ({ path: p, name: p.split(/[\\/]/).pop() })))
-    } catch {
-      document.getElementById('file-input').click()
-    }
+    document.getElementById('file-input').click()
   }
 
   const handleDrop = useCallback((e) => {
     e.preventDefault(); setDrag(false)
     if (disabled) return
     const list = Array.from(e.dataTransfer.files || [])
-      .map(f => ({ path: f.path || f.name, name: f.name }))
     if (list.length) onFiles(list)
   }, [disabled, onFiles])
 
@@ -123,7 +120,7 @@ function DropZone({ disabled, onFiles }) {
     <>
       <input id="file-input" type="file" accept={ACCEPT} multiple className="hidden"
         onChange={e => {
-          const list = Array.from(e.target.files || []).map(f => ({ path: f.path || f.name, name: f.name }))
+          const list = Array.from(e.target.files || [])
           if (list.length) onFiles(list)
           e.target.value = ''
         }} />
@@ -380,20 +377,21 @@ export default function App() {
   useEffect(() => { loadDocs(client) }, [client, loadDocs])
 
   const addFiles = useCallback((list) => {
+    // `list` = tableau d'objets File (drag-drop ou sélecteur).
     setFiles(prev => {
-      const seen = new Set(prev.map(f => f.path))
-      const fresh = list
-        .filter(f => ACCEPT_RE.test(f.name))
-        .filter(f => !seen.has(f.path))
-        .map(f => ({ ...f, status: 'pending' }))
-      if (fresh.length < list.length) {
+      const seen = new Set(prev.map(f => f.id))
+      const accepted = list.filter(f => ACCEPT_RE.test(f.name))
+      const fresh = accepted
+        .map(f => ({ id: `${f.name}::${f.size}`, name: f.name, size: f.size, file: f, status: 'pending' }))
+        .filter(f => !seen.has(f.id))
+      if (accepted.length < list.length) {
         setStatus({ text: 'Certains fichiers ont été ignorés (format non pris en charge).', type: 'warn' })
       }
       return [...prev, ...fresh]
     })
   }, [])
 
-  const removeFile = (path) => setFiles(prev => prev.filter(f => f.path !== path))
+  const removeFile = (id) => setFiles(prev => prev.filter(f => f.id !== id))
   const clearFiles = () => { if (!running) { setFiles([]); setStatus({ text: '', type: 'muted' }) } }
 
   const setFileStatus = (idx, st) => setFiles(prev => prev.map((f, i) => i === idx ? { ...f, status: st } : f))
@@ -442,12 +440,19 @@ export default function App() {
     setProgress({ current: 0, total: files.length })
     setFiles(prev => prev.map(f => ({ ...f, status: 'pending' })))
     setStatus({ text: 'Connexion à Bob! Desk…', type: 'muted' })
-    await api('/upload', {
-      client_id: client._id,
-      tab_id: client.documents_tab_id || '',
-      files: files.map(f => ({ path: f.path, name: f.name })),
-      dry_run: dryRun,
-    })
+    // Envoi du CONTENU des fichiers en multipart (indépendant du chemin disque).
+    const fd = new FormData()
+    fd.append('client_id', client._id)
+    fd.append('tab_id', client.documents_tab_id || '')
+    fd.append('dry_run', dryRun ? 'true' : 'false')
+    files.forEach(f => fd.append('files', f.file, f.name))
+    try {
+      const r = await fetch('/api/upload', { method: 'POST', body: fd })
+      const j = await r.json()
+      if (!j.ok) { setRunning(false); setStatus({ text: j.error || 'Échec de l\'envoi.', type: 'error' }); return }
+    } catch (e) {
+      setRunning(false); setStatus({ text: 'Échec de l\'envoi des fichiers.', type: 'error' }); return
+    }
     pollLogs()
   }
 
@@ -588,7 +593,7 @@ export default function App() {
         <div className="space-y-1.5 max-h-44 overflow-y-auto">
           {files.length === 0
             ? <div className="text-[11px] px-1" style={{ color: 'var(--muted)' }}>Aucun fichier sélectionné.</div>
-            : files.map(f => <FileRow key={f.path} f={f} onRemove={() => removeFile(f.path)} />)
+            : files.map(f => <FileRow key={f.id} f={f} onRemove={() => removeFile(f.id)} />)
           }
         </div>
 
