@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Build
+build/
+dist/
+*.spec.bak
+frontend_dist/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Env / secrets
+.env
+config/.env
+
+# Référence temporaire TéléDesk (non versionnée)
+.td_ref/
+
+# Logs / temp
+logs/*.log
+tmp/
+*.log

@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+/* ── Thème sombre (défaut) ───────────────────────────────────────────── */
+:root {
+  --bg:        #0d0f14;
+  --surface:   #0a0c11;
+  --card:      #161a24;
+  --card2:     #1e2535;
+  --border:    #1e2535;
+  --border2:   #252a38;
+  --accent:    #4f46e5;
+  --accent-h:  #4338ca;
+  --text:      #e2e4ed;
+  --text2:     #6b7399;
+  --text3:     #3a4060;
+  --muted:     #1e2535;
+  --grad:      rgba(79,70,229,0.5);
+}
+
+/* ── Thème clair olive ───────────────────────────────────────────────── */
+:root.light {
+  --bg:        #f5f2ea;
+  --surface:   #edeadf;
+  --card:      #e8e4d8;
+  --card2:     #dedad0;
+  --border:    #d4cfbf;
+  --border2:   #c8c2ae;
+  --accent:    #6b7c3f;
+  --accent-h:  #566630;
+  --text:      #2a2a1e;
+  --text2:     #6b6a52;
+  --text3:     #a0997e;
+  --muted:     #d4cfbf;
+  --grad:      rgba(107,124,63,0.4);
+}
+
+@layer base {
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+    overflow: hidden;
+    height: 100vh;
+    transition: background 0.2s, color 0.2s;
+  }
+  #root { height: 100vh; display: flex; }
+  ::-webkit-scrollbar { width: 0; height: 0; }
+}
