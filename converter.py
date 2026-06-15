@@ -45,8 +45,63 @@ def _user_install_arg() -> str:
     return f"-env:UserInstallation={uri}"
 
 
+def _registry_libreoffice() -> str | None:
+    """Cherche soffice.exe via le registre Windows (installation standard)."""
+    try:
+        import winreg
+    except ImportError:
+        return None
+    candidates = [
+        # App Paths : valeur par défaut = chemin complet de soffice.exe
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\soffice.exe", None),
+        (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\soffice.exe", None),
+        # InstallPath de LibreOffice : dossier program\
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\LibreOffice\UNO\InstallPath", None),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\LibreOffice\UNO\InstallPath", None),
+    ]
+    for hive, subkey, name in candidates:
+        for view in (0, getattr(winreg, "KEY_WOW64_64KEY", 0), getattr(winreg, "KEY_WOW64_32KEY", 0)):
+            try:
+                with winreg.OpenKey(hive, subkey, 0, winreg.KEY_READ | view) as k:
+                    val, _ = winreg.QueryValueEx(k, name)
+                if not val:
+                    continue
+                p = Path(val)
+                # InstallPath pointe vers le dossier program\ → on ajoute soffice.exe
+                if p.is_dir():
+                    p = p / "soffice.exe"
+                if p.is_file():
+                    return str(p)
+            except OSError:
+                continue
+    return None
+
+
+def _glob_program_files() -> str | None:
+    """Parcourt Program Files à la recherche de LibreOffice*\\program\\soffice.exe."""
+    roots = [
+        os.environ.get("ProgramFiles", r"C:\Program Files"),
+        os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+    ]
+    for root in roots:
+        if not root:
+            continue
+        try:
+            for match in Path(root).glob("LibreOffice*/program/soffice.exe"):
+                if match.is_file():
+                    return str(match)
+        except OSError:
+            continue
+    return None
+
+
 def find_libreoffice() -> str | None:
-    """Retourne le chemin de soffice(.exe) ou None si introuvable."""
+    """Retourne le chemin de soffice(.exe) ou None si introuvable.
+    Recherche : variable LIBREOFFICE_PATH, PATH, chemins usuels, registre Windows,
+    puis balayage de Program Files."""
+    env = os.environ.get("LIBREOFFICE_PATH")
+    if env and Path(env).is_file():
+        return env
     for name in ("soffice", "soffice.exe", "soffice.bin"):
         found = shutil.which(name)
         if found:
@@ -54,10 +109,10 @@ def find_libreoffice() -> str | None:
     for cand in _SOFFICE_CANDIDATES:
         if Path(cand).is_file():
             return cand
-    env = os.environ.get("LIBREOFFICE_PATH")
-    if env and Path(env).is_file():
-        return env
-    return None
+    found = _registry_libreoffice()
+    if found:
+        return found
+    return _glob_program_files()
 
 
 def is_supported(filename: str) -> bool:
@@ -132,12 +187,16 @@ def warmup_libreoffice(timeout: int = 90) -> bool:
     conversion ne plante pas. Retourne True si OK."""
     soffice = find_libreoffice()
     if not soffice:
-        logger.warning("Préchauffage LibreOffice ignoré : soffice introuvable.")
+        logger.warning(
+            "LibreOffice non détecté — la conversion Word/Excel sera indisponible. "
+            "Installez-le depuis libreoffice.org/download (images et PDF fonctionnent sans)."
+        )
         return False
     cmd = [
         soffice, "--headless", "--invisible", "--nodefault", "--norestore",
         "--nolockcheck", "--nologo", _user_install_arg(), "--terminate_after_init",
     ]
+    logger.info("LibreOffice détecté : %s", soffice)
     logger.info("Préchauffage de LibreOffice…")
     try:
         subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
@@ -163,8 +222,9 @@ def _office_to_pdf(src: Path, out_dir: Path) -> str:
     soffice = find_libreoffice()
     if not soffice:
         raise ConversionError(
-            "LibreOffice introuvable. Installez-le ou définissez LIBREOFFICE_PATH "
-            "vers soffice.exe."
+            "LibreOffice n'est pas installé sur ce PC — requis pour convertir Word/Excel. "
+            "Installez-le gratuitement depuis libreoffice.org/download puis relancez DocsDesk. "
+            "(Les images et PDF fonctionnent sans LibreOffice.)"
         )
 
     dest = out_dir / (src.stem + ".pdf")
