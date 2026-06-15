@@ -588,7 +588,7 @@ export default function App() {
           </div>
         </button>
 
-        <div className="text-center text-[10px] pb-2" style={{ color: 'var(--muted)' }}>socacom.fr · DocsDesk v1.0</div>
+        <div className="text-center text-[10px] pb-2" style={{ color: 'var(--muted)' }}>socacom.fr · DocsDesk v1.1.0</div>
       </aside>
 
       {/* ── MAIN ────────────────────────────────────────────────── */}
