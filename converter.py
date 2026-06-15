@@ -218,6 +218,61 @@ def _run_soffice_convert(soffice: str, src: Path, out_dir: Path, timeout: int = 
                           creationflags=_NO_WINDOW)
 
 
+LIBREOFFICE_WINGET_ID = "TheDocumentFoundation.LibreOffice"
+
+
+def winget_available() -> bool:
+    return shutil.which("winget") is not None
+
+
+def install_libreoffice(timeout: int = 1800) -> bool:
+    """Installe LibreOffice automatiquement via winget (silencieux).
+    Déclenche une invite d'élévation Windows (UAC). Retourne True si LibreOffice
+    est présent après l'opération."""
+    if find_libreoffice():
+        logger.info("LibreOffice est déjà installé.")
+        return True
+    winget = shutil.which("winget")
+    if not winget:
+        logger.error(
+            "Installation automatique impossible (winget absent). "
+            "Installez LibreOffice manuellement depuis libreoffice.org/download."
+        )
+        return False
+
+    logger.info("Installation de LibreOffice via winget…")
+    logger.info("Téléchargement ~340 Mo — plusieurs minutes. Acceptez l'invite Windows si elle apparaît.")
+    cmd = [
+        winget, "install", "--id", LIBREOFFICE_WINGET_ID, "-e",
+        "--silent", "--accept-package-agreements", "--accept-source-agreements",
+        "--disable-interactivity",
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
+                              creationflags=_NO_WINDOW)
+    except subprocess.TimeoutExpired:
+        logger.error("Installation LibreOffice : délai dépassé.")
+        return False
+    except Exception as exc:
+        logger.error("Installation LibreOffice échouée : %s", exc)
+        return False
+
+    out = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    for line in out.splitlines():
+        s = line.strip()
+        if s and any(k in s.lower() for k in ("found", "download", "install", "success", "error", "échou", "annul")):
+            logger.info("winget: %s", s[:160])
+
+    if find_libreoffice():
+        logger.info("✓ LibreOffice installé avec succès.")
+        return True
+    logger.error(
+        "LibreOffice reste introuvable après l'installation "
+        "(invite refusée ?). Réessayez ou installez-le manuellement."
+    )
+    return False
+
+
 def _office_to_pdf(src: Path, out_dir: Path) -> str:
     soffice = find_libreoffice()
     if not soffice:

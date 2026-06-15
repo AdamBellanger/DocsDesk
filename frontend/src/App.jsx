@@ -346,8 +346,16 @@ export default function App() {
   const [email, setEmail]         = useState('')
   const [appdataDir, setAppdataDir] = useState('')
   const [progress, setProgress]   = useState({ current: 0, total: 0 })
+  const [lo, setLo]               = useState({ installed: true, can_autoinstall: false, installing: false })
   const logRef  = useRef()
   const pollRef = useRef()
+  const loPollRef = useRef()
+
+  const checkLibre = useCallback(async () => {
+    const s = await api('/libreoffice_status')
+    setLo(s)
+    return s
+  }, [])
 
   useEffect(() => {
     api('/init').then(d => {
@@ -355,7 +363,33 @@ export default function App() {
       setAppdataDir(d.appdata_dir || '')
       if (!d.email) setShowLogin(true)
     })
-  }, [])
+    checkLibre()
+  }, [checkLibre])
+
+  const installLibre = async () => {
+    if (lo.installing) return
+    if (!lo.can_autoinstall) { window.open('https://www.libreoffice.org/download/download-libreoffice/', '_blank'); return }
+    setLo(s => ({ ...s, installing: true }))
+    setShowLog(true)
+    setLogs(prev => [...prev, "Installation de LibreOffice demandée — acceptez l'invite Windows si elle apparaît…"])
+    await api('/install_libreoffice', {})
+    clearInterval(loPollRef.current)
+    loPollRef.current = setInterval(async () => {
+      const lg = await api('/logs')
+      if (lg.lines?.length) {
+        setLogs(prev => [...prev, ...lg.lines])
+        setTimeout(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight }, 50)
+      }
+      const s = await api('/libreoffice_status')
+      if (s.install_done || !s.installing) {
+        clearInterval(loPollRef.current)
+        setLo(s)
+        setStatus(s.installed
+          ? { text: 'LibreOffice installé ✓', type: 'success' }
+          : { text: 'Installation LibreOffice non aboutie.', type: 'error' })
+      }
+    }, 1500)
+  }
 
   // Charge les documents existants à la sélection d'un client
   const loadDocs = useCallback(async (c) => {
@@ -559,6 +593,35 @@ export default function App() {
 
       {/* ── MAIN ────────────────────────────────────────────────── */}
       <main className="flex-1 flex flex-col overflow-hidden p-5 min-w-0">
+        {!lo.installed && (
+          <div className="mb-3 rounded-xl border px-4 py-3 flex items-center gap-3"
+            style={{ background: 'color-mix(in srgb, #fbbf24 10%, var(--card))', borderColor: '#fbbf2455' }}>
+            <span className="text-lg">⚠️</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium" style={{ color: 'var(--text)' }}>
+                LibreOffice non détecté
+              </div>
+              <div className="text-[11px] mt-0.5" style={{ color: 'var(--text3)' }}>
+                Requis pour convertir Word/Excel. {lo.can_autoinstall
+                  ? 'Installation automatique disponible (~340 Mo, une invite Windows s\'affichera).'
+                  : 'Téléchargez-le depuis libreoffice.org.'} Les images et PDF fonctionnent sans.
+              </div>
+            </div>
+            <button onClick={installLibre} disabled={lo.installing}
+              className="shrink-0 text-xs font-semibold px-3 py-2 rounded-lg text-white transition-colors cursor-pointer disabled:opacity-60 flex items-center gap-2"
+              style={{ background: 'var(--accent)' }}>
+              {lo.installing ? (
+                <>
+                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                  </svg>
+                  Installation…
+                </>
+              ) : (lo.can_autoinstall ? 'Installer automatiquement' : 'Télécharger')}
+            </button>
+          </div>
+        )}
         <DropZone disabled={running} onFiles={addFiles} />
 
         {/* Stats */}

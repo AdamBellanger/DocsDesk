@@ -21,7 +21,9 @@ from flask import Flask, jsonify, request, send_from_directory
 
 sys.path.insert(0, str(Path(__file__).parent))
 from bobdesk_client import BobDeskClient, BobDeskAPIError
-from converter import convert_to_pdf, is_supported, ConversionError, warmup_libreoffice
+from converter import (convert_to_pdf, is_supported, ConversionError,
+                       warmup_libreoffice, find_libreoffice, install_libreoffice,
+                       winget_available)
 
 # ── Chemins ───────────────────────────────────────────────────────────────
 _BASE = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
@@ -47,6 +49,9 @@ _log_queue: queue.Queue = queue.Queue()
 _upload_done = False
 _upload_error = ""
 _upload_progress: dict = {"current": 0, "total": 0}
+
+# État de l'installation automatique de LibreOffice
+_lo_install: dict = {"running": False, "done": False, "ok": False}
 
 DIST = _BASE / "frontend_dist"
 app = Flask(__name__, static_folder=str(DIST), static_url_path="")
@@ -271,6 +276,46 @@ def api_logs():
 def api_open_appdata():
     _APPDATA.mkdir(parents=True, exist_ok=True)
     subprocess.Popen(["explorer", str(_APPDATA)])
+    return jsonify({"ok": True})
+
+
+# ── LibreOffice (statut + installation automatique) ───────────────────────
+
+@app.get("/api/libreoffice_status")
+def api_libreoffice_status():
+    path = find_libreoffice()
+    return jsonify({
+        "installed": bool(path),
+        "path": path or "",
+        "can_autoinstall": winget_available(),
+        "installing": _lo_install["running"],
+        "install_done": _lo_install["done"],
+        "install_ok": _lo_install["ok"],
+    })
+
+
+@app.post("/api/install_libreoffice")
+def api_install_libreoffice():
+    if _lo_install["running"]:
+        return jsonify({"ok": True, "already_running": True})
+    # vide le journal pour suivre l'installation
+    while not _log_queue.empty():
+        try:
+            _log_queue.get_nowait()
+        except queue.Empty:
+            break
+    _lo_install.update(running=True, done=False, ok=False)
+
+    def _install_worker():
+        ok = False
+        try:
+            ok = install_libreoffice()
+        except Exception as exc:
+            logger.error("Installation LibreOffice : %s", exc)
+        finally:
+            _lo_install.update(running=False, done=True, ok=ok)
+
+    threading.Thread(target=_install_worker, daemon=True).start()
     return jsonify({"ok": True})
 
 
